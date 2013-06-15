@@ -30,8 +30,23 @@ function stringify (obj) {
   return qs.join('&');
 }
 
+/**
+ * @module Geostore
+*/
+
+/**
+ * Authenticate a user against the Geostore Service for authenticated requests.
+ * @param {String} username your username
+ * @param {String} password your password
+ * @param {Object} options can be null
+ * @param {Function} callback to be called when authentication is complete
+*/
 function authenticate (username, password, options, callback) {
   var url = "https://www.arcgis.com/sharing/generateToken";
+
+  if (this.options && this.options.authenticationUrl) {
+    url = this.options.authenticationUrl;
+  }
 
   var data = {
     username: username,
@@ -62,8 +77,7 @@ function FeatureService (options, callback) {
   this.options   = options;
   this.callback  = callback;
 
-  this.requestHandler = exports.requestHandler;
-
+  this.requestHandler = { get: get, post: post };
   this.get();
 }
 
@@ -120,11 +134,13 @@ function _internalCallback(err, data, cb){
 FeatureService.prototype.issueRequest = function (endPoint, parameters, cb, method) {
   parameters.f = parameters.f || 'json';
   parameters.outFields = parameters.outFields || '*';
-  parameters.token = parameters.token || this.token;
+  if(parameters.token || this.token){
+    parameters.token = parameters.token || this.token;
+  }
 
   var urlPart = '';
 
-  if (endPoint && endPoint !== 'base') {
+  if (endPoint) {
     urlPart = '/' + endPoint;
   }
 
@@ -137,6 +153,8 @@ FeatureService.prototype.issueRequest = function (endPoint, parameters, cb, meth
       _internalCallback(err, data, cb);
     });
   } else {
+    //assuming method is POST
+    //TODO: change this to use method values if there are feature service operations that use PUT or DELETE
     this.requestHandler.post(url, parameters, function(err, data) {
       _internalCallback(err, data, cb);
     });
@@ -186,21 +204,52 @@ FeatureService.prototype.edit = function (parameters, callback) {
   issueRequest('applyEdits', parameters, callback, 'post');
 };
 
+/**
+ * @module Geostore
+*/
+/**
+ * @private
+*/
+function baseUrl(options) {
+  var url = 'http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer';
+
+  if (options && options.geocoderUrl) {
+    url = options.geocoderUrl;
+  }
+
+  return url;
+}
+
+/**
+ * Access to a simple Geocode request
+ * @param {Object} parameters 
+ * @param {Function} callback to be called when geocode is complete
+ * geoservice.geocode({ text: "920 SW 3rd Ave, Portland, OR 97204" }, callback);
+*/
 function geocode (parameters, callback) {
   parameters.f = parameters.f || "json";
 
   // build the request url
-  var url = 'http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find?';
+  var url = baseUrl(this.options);
+  url += '/find?';
+
   url += stringify(parameters);
 
   this.requestHandler.get(url, callback);
 }
 
+/**
+ * Reverse Geocode
+ * @param {Object} parameters 
+ * @param {Function} callback to be called when reverse geocode is complete
+*/
 function reverse (parameters, callback) {
   parameters.f = parameters.f || "json";
 
   // build the request url
-  var url = 'http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?';
+  var url = baseUrl(this.options);
+
+  url += '/reverseGeocode?';
   url += stringify(parameters);
 
   this.requestHandler.get(url, callback);
@@ -212,7 +261,9 @@ function addresses (parameters, callback) {
   }
 
   //build the request url
-  var url = 'http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?';
+  var url = baseUrl(this.options);
+
+  url += '/findAddressCandidates?';
 
   //allow a text query like simple geocode service to return all candidate addresses
   if (parameters.text) {
@@ -279,7 +330,11 @@ Batch.prototype.run = function (callback) {
       referer: "arcgis-node"
     };
 
-    this.requestHandler.post("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/geocodeAddresses", data, callback);
+    var url = baseUrl(this.options);
+
+    url += "/geocodeAddresses";  
+
+    this.requestHandler.post(url, data, callback);
   }
 };
 
@@ -305,7 +360,7 @@ function get (url, callback) {
   httpRequest.open("GET", url);
   if (httpRequest.setDisableHeaderCheck !== undefined) {
     httpRequest.setDisableHeaderCheck(true);
-    httpRequest.setRequestHeader("Referer", "arcgis-node");
+    httpRequest.setRequestHeader("Referer", "geoservices-js");
   }
   httpRequest.send(null);
 }
@@ -331,7 +386,7 @@ function post (url, data, callback) {
   httpRequest.open("POST", url);
   if (httpRequest.setDisableHeaderCheck !== undefined) {
     httpRequest.setDisableHeaderCheck(true);
-    httpRequest.setRequestHeader("Referer", "arcgis-node");
+    httpRequest.setRequestHeader("Referer", "geoservices-js");
   }
   
   httpRequest.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -343,6 +398,7 @@ function ArcGIS (options) {
   this.options = options;
 
   this.geocode = geocode;
+  this.geocode.reverse = reverse;
   this.FeatureService = FeatureService;
   this.authenticate   = authenticate;
   this.requestHandler = { get: get, post: post };

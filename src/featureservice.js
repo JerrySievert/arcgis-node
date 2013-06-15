@@ -4,8 +4,7 @@ function FeatureService (options, callback) {
   this.options   = options;
   this.callback  = callback;
 
-  this.requestHandler = exports.requestHandler;
-
+  this.requestHandler = { get: get, post: post };
   this.get();
 }
 
@@ -62,11 +61,13 @@ function _internalCallback(err, data, cb){
 FeatureService.prototype.issueRequest = function (endPoint, parameters, cb, method) {
   parameters.f = parameters.f || 'json';
   parameters.outFields = parameters.outFields || '*';
-  parameters.token = parameters.token || this.token;
+  if(parameters.token || this.token){
+    parameters.token = parameters.token || this.token;
+  }
 
   var urlPart = '';
 
-  if (endPoint && endPoint !== 'base') {
+  if (endPoint) {
     urlPart = '/' + endPoint;
   }
 
@@ -79,6 +80,8 @@ FeatureService.prototype.issueRequest = function (endPoint, parameters, cb, meth
       _internalCallback(err, data, cb);
     });
   } else {
+    //assuming method is POST
+    //TODO: change this to use method values if there are feature service operations that use PUT or DELETE
     this.requestHandler.post(url, parameters, function(err, data) {
       _internalCallback(err, data, cb);
     });
